@@ -2,7 +2,7 @@ import AppKit
 
 final class PlannerController: NSObject, NSWindowDelegate {
     private var window: NSWindow!
-    private let textView = NSTextView()
+    private let inputField = NSTextField()
 
     override init() {
         super.init()
@@ -37,22 +37,17 @@ final class PlannerController: NSObject, NSWindowDelegate {
         subtitle.textColor = .secondaryLabelColor
         subtitle.translatesAutoresizingMaskIntoConstraints = false
 
-        let scroll = NSScrollView()
-        scroll.borderType = .bezelBorder
-        scroll.hasVerticalScroller = true
-        scroll.drawsBackground = true
-        scroll.backgroundColor = .white
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        textView.font = NSFont.systemFont(ofSize: 20)
-        textView.string = ""
-        textView.isRichText = false
-        textView.allowsUndo = true
-        textView.drawsBackground = true
-        textView.backgroundColor = .white
-        textView.textColor = .black
-        textView.insertionPointColor = .black
-        textView.textContainerInset = NSSize(width: 14, height: 14)
-        scroll.documentView = textView
+        inputField.font = NSFont.systemFont(ofSize: 22)
+        inputField.placeholderString = "例如：今天要写方案，回复邮件，下午整理代码，晚上复盘"
+        inputField.textColor = .black
+        inputField.backgroundColor = .white
+        inputField.drawsBackground = true
+        inputField.isBezeled = true
+        inputField.isEditable = true
+        inputField.isSelectable = true
+        inputField.cell?.wraps = true
+        inputField.cell?.isScrollable = false
+        inputField.translatesAutoresizingMaskIntoConstraints = false
 
         let hint = NSTextField(labelWithString: "输入示例：今天要写方案，回复邮件，下午整理代码，晚上复盘。")
         hint.font = NSFont.systemFont(ofSize: 13, weight: .regular)
@@ -76,7 +71,7 @@ final class PlannerController: NSObject, NSWindowDelegate {
         buttons.spacing = 12
         buttons.translatesAutoresizingMaskIntoConstraints = false
 
-        for view in [title, subtitle, scroll, hint, buttons] {
+        for view in [title, subtitle, inputField, hint, buttons] {
             content.addSubview(view)
         }
 
@@ -89,10 +84,11 @@ final class PlannerController: NSObject, NSWindowDelegate {
             subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             subtitle.trailingAnchor.constraint(equalTo: title.trailingAnchor),
 
-            scroll.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 22),
-            scroll.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: hint.topAnchor, constant: -10),
+            inputField.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 22),
+            inputField.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            inputField.trailingAnchor.constraint(equalTo: title.trailingAnchor),
+            inputField.heightAnchor.constraint(equalToConstant: 170),
+            inputField.bottomAnchor.constraint(lessThanOrEqualTo: hint.topAnchor, constant: -10),
 
             hint.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             hint.trailingAnchor.constraint(equalTo: title.trailingAnchor),
@@ -103,16 +99,16 @@ final class PlannerController: NSObject, NSWindowDelegate {
         ])
 
         window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(textView)
+        window.makeFirstResponder(inputField)
     }
 
     @objc private func submit() {
-        print(textView.string)
+        print(inputField.stringValue)
         NSApp.terminate(nil)
     }
 
     @objc private func startDictation() {
-        window.makeFirstResponder(textView)
+        window.makeFirstResponder(inputField)
 
         let source = CGEventSource(stateID: .hidSystemState)
         let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 63, keyDown: true)
