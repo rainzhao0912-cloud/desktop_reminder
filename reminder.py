@@ -7,6 +7,7 @@ import argparse
 import json
 import platform
 import queue
+import re
 import subprocess
 import threading
 import time
@@ -20,6 +21,11 @@ DEFAULT_SOUND = "/System/Library/Sounds/Glass.aiff"
 CHECK_INTERVAL_SECONDS = 10
 ROOT_DIR = Path(__file__).resolve().parent
 NATIVE_OVERLAY = ROOT_DIR / "scripts" / "macos_overlay.swift"
+DAILY_PLANNER = ROOT_DIR / "scripts" / "daily_planner.swift"
+PLANS_DIR = ROOT_DIR / "data" / "plans"
+DAY_START_HOUR = 9
+DAY_END_HOUR = 22
+BREAK_MINUTES = 10
 
 
 @dataclass
@@ -36,9 +42,22 @@ class Task:
         return f"{self.at.isoformat()}::{self.title}"
 
 
-def load_tasks(schedule_path: Path, today: date | None = None) -> list[Task]:
+def load_tasks(schedule_path: Path, today: Optional[date] = None) -> list[Task]:
     today = today or date.today()
-    data = json.loads(schedule_path.read_text(encoding="utf-8"))
+    tasks: list[Task] = []
+
+    if schedule_path.exists():
+        tasks.extend(tasks_from_file(schedule_path, today))
+
+    daily_path = daily_plan_path(today)
+    if daily_path.exists():
+        tasks.extend(tasks_from_file(daily_path, today))
+
+    return sorted(tasks, key=lambda task: task.at)
+
+
+def tasks_from_file(path: Path, today: date) -> list[Task]:
+    data = json.loads(path.read_text(encoding="utf-8"))
     tasks: list[Task] = []
 
     for item in data.get("tasks", []):
@@ -58,7 +77,7 @@ def load_tasks(schedule_path: Path, today: date | None = None) -> list[Task]:
             )
         )
 
-    return sorted(tasks, key=lambda task: task.at)
+    return tasks
 
 
 def parse_task_date(value: Optional[str], fallback: date) -> date:
@@ -267,14 +286,189 @@ class MacOverlayApp:
             )
 
 
+def daily_plan_path(day: Optional[date] = None) -> Path:
+    day = day or date.today()
+    return PLANS_DIR / f"{day.isoformat()}.json"
+
+
+def ensure_today_plan(force: bool = False) -> Optional[Path]:
+    today = date.today()
+    path = daily_plan_path(today)
+    if path.exists() and not force:
+        return path
+
+    text = collect_daily_plan_text()
+    if not text.strip():
+        return None
+
+    tasks = build_daily_plan(text, datetime.now())
+    if not tasks:
+        return None
+
+    PLANS_DIR.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "source": text,
+                "generated_at": datetime.now().isoformat(timespec="seconds"),
+                "tasks": tasks,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def collect_daily_plan_text() -> str:
+    if platform.system() == "Darwin" and DAILY_PLANNER.exists():
+        result = subprocess.run(
+            ["/usr/bin/swift", str(DAILY_PLANNER)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+
+    print("请输入今天要做的事，结束后按 Ctrl-D：")
+    lines: list[str] = []
+    try:
+        while True:
+            lines.append(input())
+    except EOFError:
+        return "\n".join(lines)
+
+
+def build_daily_plan(text: str, now: datetime) -> list[dict[str, Any]]:
+    items = extract_plan_items(text)
+    if not items:
+        return []
+
+    cursor = next_schedule_start(now)
+    tasks: list[dict[str, Any]] = []
+
+    for item in items:
+        duration = infer_duration_minutes(item)
+        cursor = apply_time_hint(cursor, item)
+        cursor = avoid_lunch_overlap(cursor, duration)
+        if cursor.hour >= DAY_END_HOUR:
+            break
+
+        tasks.append(
+            {
+                "date": cursor.date().isoformat(),
+                "time": cursor.strftime("%H:%M"),
+                "title": item,
+                "detail": f"预计 {duration} 分钟。来自今天早上的日程输入。",
+                "duration_minutes": duration,
+            }
+        )
+        cursor = cursor + timedelta(minutes=duration + BREAK_MINUTES)
+
+    return tasks
+
+
+def extract_plan_items(text: str) -> list[str]:
+    normalized = re.sub(r"[，,；;。！？!?、\n\r]+", "\n", text)
+    parts = []
+    for raw in normalized.split("\n"):
+        item = clean_plan_item(raw)
+        if item:
+            parts.append(item)
+    return parts
+
+
+def clean_plan_item(value: str) -> str:
+    item = value.strip(" \t-_*0123456789.、")
+    item = re.sub(r"^(今天|我今天|需要|要|还要|然后|接着|还有|帮我|安排一下)+", "", item).strip()
+    item = re.sub(r"^(做|处理|完成|去|把)+", "", item).strip()
+    return item[:80]
+
+
+def infer_duration_minutes(item: str) -> int:
+    explicit = re.search(r"(\d+(?:\.\d+)?)\s*(小时|个小时|h|H)", item)
+    if explicit:
+        return clamp_duration(int(float(explicit.group(1)) * 60))
+
+    explicit = re.search(r"(\d+)\s*(分钟|分|min|m)", item)
+    if explicit:
+        return clamp_duration(int(explicit.group(1)))
+
+    rules = [
+        (("会议", "开会", "沟通", "面试"), 60),
+        (("午饭", "吃饭", "午休", "休息"), 60),
+        (("运动", "健身", "跑步"), 45),
+        (("复盘", "总结", "整理"), 30),
+        (("邮件", "消息", "回复"), 30),
+        (("学习", "阅读", "写作", "开发", "代码"), 60),
+        (("买", "取", "寄", "预约"), 30),
+    ]
+    if re.search(r"会($|议|面|聊|沟通)", item):
+        return 60
+    for keywords, minutes in rules:
+        if any(keyword in item for keyword in keywords):
+            return minutes
+    return 45
+
+
+def clamp_duration(minutes: int) -> int:
+    return max(15, min(180, minutes))
+
+
+def next_schedule_start(now: datetime) -> datetime:
+    start = now.replace(hour=DAY_START_HOUR, minute=0, second=0, microsecond=0)
+    if now <= start:
+        return start
+
+    rounded_minute = ((now.minute + 14) // 15) * 15
+    cursor = now.replace(second=0, microsecond=0)
+    if rounded_minute >= 60:
+        cursor = cursor.replace(minute=0) + timedelta(hours=1)
+    else:
+        cursor = cursor.replace(minute=rounded_minute)
+    return cursor
+
+
+def apply_time_hint(cursor: datetime, item: str) -> datetime:
+    hints = [
+        (("早上", "上午"), 9, 0),
+        (("中午",), 12, 0),
+        (("下午",), 14, 0),
+        (("傍晚",), 17, 30),
+        (("晚上", "今晚"), 19, 0),
+    ]
+    for keywords, hour, minute in hints:
+        if any(keyword in item for keyword in keywords):
+            hinted = cursor.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if cursor < hinted:
+                return hinted
+    return cursor
+
+
+def avoid_lunch_overlap(cursor: datetime, duration: int) -> datetime:
+    lunch_start = cursor.replace(hour=12, minute=30, second=0, microsecond=0)
+    lunch_end = cursor.replace(hour=13, minute=30, second=0, microsecond=0)
+    if cursor < lunch_end and cursor + timedelta(minutes=duration) > lunch_start:
+        return lunch_end
+    return cursor
+
+
 def scheduler_loop(
     schedule_path: Path,
     task_queue: queue.Queue[Task],
     snooze_queue: queue.Queue[Task],
     fired: set[str],
 ) -> None:
+    planned_day: Optional[date] = None
     while True:
         now = datetime.now()
+        if planned_day != now.date():
+            ensure_today_plan()
+            planned_day = now.date()
+
         try:
             tasks = load_tasks(schedule_path, now.date())
         except Exception as exc:
@@ -298,7 +492,9 @@ def scheduler_loop(
         time.sleep(CHECK_INTERVAL_SECONDS)
 
 
-def list_tasks(schedule_path: Path) -> None:
+def list_tasks(schedule_path: Path, plan_if_missing: bool = True) -> None:
+    if plan_if_missing:
+        ensure_today_plan()
     tasks = load_tasks(schedule_path)
     if not tasks:
         print("今天没有提醒。")
@@ -338,6 +534,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="启动后立即弹出一个测试提醒",
     )
+    parser.add_argument(
+        "--plan",
+        action="store_true",
+        help="立刻弹出今天的日程输入窗口并重新生成计划",
+    )
+    parser.add_argument(
+        "--no-plan",
+        action="store_true",
+        help="启动时不弹出今天的日程输入窗口",
+    )
     return parser.parse_args()
 
 
@@ -345,8 +551,17 @@ def main() -> None:
     args = parse_args()
     schedule_path = Path(args.schedule).expanduser().resolve()
 
+    if args.plan:
+        path = ensure_today_plan(force=True)
+        if path:
+            print(f"已生成今天计划: {path}")
+        return
+
+    if not args.no_plan and not args.test:
+        ensure_today_plan()
+
     if args.list:
-        list_tasks(schedule_path)
+        list_tasks(schedule_path, plan_if_missing=not args.no_plan)
         return
 
     task_queue: queue.Queue[Task] = queue.Queue()
