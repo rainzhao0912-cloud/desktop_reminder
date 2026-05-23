@@ -47,6 +47,10 @@ final class PlannerController: NSObject, NSWindowDelegate {
         textView.allowsUndo = true
         scroll.documentView = textView
 
+        let voice = NSButton(title: "语音输入", target: self, action: #selector(startDictation))
+        voice.bezelStyle = .rounded
+        voice.controlSize = .large
+
         let submit = NSButton(title: "生成今天计划", target: self, action: #selector(submit))
         submit.bezelStyle = .rounded
         submit.controlSize = .large
@@ -55,7 +59,7 @@ final class PlannerController: NSObject, NSWindowDelegate {
         later.bezelStyle = .rounded
         later.controlSize = .large
 
-        let buttons = NSStackView(views: [later, submit])
+        let buttons = NSStackView(views: [voice, later, submit])
         buttons.orientation = .horizontal
         buttons.spacing = 12
         buttons.translatesAutoresizingMaskIntoConstraints = false
@@ -91,6 +95,26 @@ final class PlannerController: NSObject, NSWindowDelegate {
         NSApp.terminate(nil)
     }
 
+    @objc private func startDictation() {
+        window.makeFirstResponder(textView)
+
+        let source = CGEventSource(stateID: .hidSystemState)
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 63, keyDown: true)
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 63, keyDown: false)
+
+        keyDown?.post(tap: .cghidEventTap)
+        keyUp?.post(tap: .cghidEventTap)
+        usleep(120_000)
+        keyDown?.post(tap: .cghidEventTap)
+        keyUp?.post(tap: .cghidEventTap)
+
+        let alert = NSAlert()
+        alert.messageText = "如果没有开始听写"
+        alert.informativeText = "请先在系统设置 > 键盘 > 听写中开启听写。也可以点击输入框后按 Fn 键两下。"
+        alert.addButton(withTitle: "知道了")
+        alert.beginSheetModal(for: window)
+    }
+
     @objc private func cancel() {
         NSApp.terminate(nil)
     }
@@ -106,4 +130,3 @@ let controller = PlannerController()
 _ = controller
 app.activate(ignoringOtherApps: true)
 app.run()
-
