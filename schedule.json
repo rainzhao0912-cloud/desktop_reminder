@@ -1,0 +1,23 @@
+{
+  "tasks": [
+    {
+      "time": "09:00",
+      "title": "开始工作",
+      "detail": "整理今天最重要的三件事，并确认上午的时间安排。",
+      "duration_minutes": 30
+    },
+    {
+      "time": "12:30",
+      "title": "午休",
+      "detail": "离开电脑，吃饭和休息。",
+      "duration_minutes": 60
+    },
+    {
+      "time": "18:00",
+      "title": "收尾复盘",
+      "detail": "回顾今天完成了什么，记录明天第一件要做的事。",
+      "duration_minutes": 20
+    }
+  ]
+}
+
