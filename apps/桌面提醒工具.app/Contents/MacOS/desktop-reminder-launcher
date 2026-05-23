@@ -1,16 +1,15 @@
 #!/bin/zsh
 
-PROJECT_DIR="/Users/bytedance/Documents/桌面提醒工具"
-LOG_DIR="$PROJECT_DIR/logs"
+RUNTIME_DIR="/Users/bytedance/Library/Application Support/DesktopReminder"
+LOG_DIR="$RUNTIME_DIR/logs"
 
 mkdir -p "$LOG_DIR"
-cd "$PROJECT_DIR" || exit 1
+cd "$RUNTIME_DIR" || exit 1
 
-if pgrep -f "$PROJECT_DIR/reminder.py --schedule" >/dev/null 2>&1; then
+if pgrep -f "$RUNTIME_DIR/reminder.py --schedule" >/dev/null 2>&1; then
   osascript -e 'display notification "提醒程序已经在运行" with title "桌面提醒工具"'
   exit 0
 fi
 
-nohup /usr/bin/python3 "$PROJECT_DIR/reminder.py" --schedule "$PROJECT_DIR/schedule.json" >> "$LOG_DIR/reminder.out.log" 2>> "$LOG_DIR/reminder.err.log" &
+nohup /usr/bin/python3 "$RUNTIME_DIR/reminder.py" --schedule "$RUNTIME_DIR/schedule.json" >> "$LOG_DIR/reminder.out.log" 2>> "$LOG_DIR/reminder.err.log" &
 osascript -e 'display notification "今天的提醒程序已启动" with title "桌面提醒工具"'
-

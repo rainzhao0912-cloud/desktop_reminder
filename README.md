@@ -13,6 +13,14 @@
 - `桌面提醒工具.app`：启动当天提醒程序
 - `填写今日日程.app`：立刻打开今天的日程输入窗口
 
+如果 `.app` 被 macOS 权限拦截，桌面上也可以放同名 `.command` 启动器。`.command` 会通过 Terminal 执行，通常更容易拿到 Documents 目录权限。
+
+桌面入口实际运行的是 `~/Library/Application Support/DesktopReminder` 里的运行版。更新代码后可执行：
+
+```bash
+./scripts/install_runtime.sh
+```
+
 日程输入窗口里有“语音输入”按钮。点击后会尝试启动 macOS 听写；如果没有反应，请先到系统设置 > 键盘 > 听写中开启听写。部分系统可能还会要求给这个应用辅助功能权限。
 
 ```bash
