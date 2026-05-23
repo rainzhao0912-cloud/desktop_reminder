@@ -2,6 +2,8 @@
 
 这是一个 macOS 本地桌面提醒工具。它会读取 `schedule.json` 里的日程，到点后弹出全屏置顶提醒，并播放系统提示音，适合做“必须看到”的强提醒。
 
+如果当前 Python 的 Tk 图形库不可用，程序会自动切换到 `scripts/macos_overlay.swift` 提供的 macOS 原生全屏覆盖层。
+
 ## 快速开始
 
 ```bash

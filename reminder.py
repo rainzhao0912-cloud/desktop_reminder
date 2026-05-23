@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import queue
 import subprocess
 import threading
@@ -17,6 +18,8 @@ from typing import Any, Optional
 
 DEFAULT_SOUND = "/System/Library/Sounds/Glass.aiff"
 CHECK_INTERVAL_SECONDS = 10
+ROOT_DIR = Path(__file__).resolve().parent
+NATIVE_OVERLAY = ROOT_DIR / "scripts" / "macos_overlay.swift"
 
 
 @dataclass
@@ -223,6 +226,47 @@ class OverlayApp:
         self._dismiss()
 
 
+class MacOverlayApp:
+    def __init__(self, task_queue: queue.Queue[Task], snooze_queue: queue.Queue[Task]) -> None:
+        self.task_queue = task_queue
+        self.snooze_queue = snooze_queue
+        self.alarm = AlarmPlayer()
+
+    def run(self) -> None:
+        while True:
+            task = self.task_queue.get()
+            self._show(task)
+
+    def _show(self, task: Task) -> None:
+        send_notification(task)
+        self.alarm.start(task.sound)
+        result = subprocess.run(
+            [
+                "/usr/bin/swift",
+                str(NATIVE_OVERLAY),
+                task.at.strftime("%H:%M"),
+                task.title,
+                task.detail or "时间到了，请现在处理这件事。",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.alarm.stop()
+
+        if result.stdout.strip() == "snooze":
+            self.snooze_queue.put(
+                Task(
+                    at=datetime.now() + timedelta(minutes=5),
+                    title=task.title,
+                    detail=task.detail,
+                    duration_minutes=task.duration_minutes,
+                    sound=task.sound,
+                    raw=task.raw,
+                )
+            )
+
+
 def scheduler_loop(
     schedule_path: Path,
     task_queue: queue.Queue[Task],
@@ -318,6 +362,10 @@ def main() -> None:
         daemon=True,
     )
     thread.start()
+
+    if platform.system() == "Darwin" and NATIVE_OVERLAY.exists():
+        MacOverlayApp(task_queue, snooze_queue).run()
+        return
 
     OverlayApp(task_queue, snooze_queue).run()
 
