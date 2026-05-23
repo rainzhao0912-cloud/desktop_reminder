@@ -40,12 +40,24 @@ final class PlannerController: NSObject, NSWindowDelegate {
         let scroll = NSScrollView()
         scroll.borderType = .bezelBorder
         scroll.hasVerticalScroller = true
+        scroll.drawsBackground = true
+        scroll.backgroundColor = .white
         scroll.translatesAutoresizingMaskIntoConstraints = false
         textView.font = NSFont.systemFont(ofSize: 20)
         textView.string = ""
         textView.isRichText = false
         textView.allowsUndo = true
+        textView.drawsBackground = true
+        textView.backgroundColor = .white
+        textView.textColor = .black
+        textView.insertionPointColor = .black
+        textView.textContainerInset = NSSize(width: 14, height: 14)
         scroll.documentView = textView
+
+        let hint = NSTextField(labelWithString: "输入示例：今天要写方案，回复邮件，下午整理代码，晚上复盘。")
+        hint.font = NSFont.systemFont(ofSize: 13, weight: .regular)
+        hint.textColor = .secondaryLabelColor
+        hint.translatesAutoresizingMaskIntoConstraints = false
 
         let voice = NSButton(title: "语音输入", target: self, action: #selector(startDictation))
         voice.bezelStyle = .rounded
@@ -64,7 +76,7 @@ final class PlannerController: NSObject, NSWindowDelegate {
         buttons.spacing = 12
         buttons.translatesAutoresizingMaskIntoConstraints = false
 
-        for view in [title, subtitle, scroll, buttons] {
+        for view in [title, subtitle, scroll, hint, buttons] {
             content.addSubview(view)
         }
 
@@ -80,7 +92,11 @@ final class PlannerController: NSObject, NSWindowDelegate {
             scroll.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 22),
             scroll.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: buttons.topAnchor, constant: -24),
+            scroll.bottomAnchor.constraint(equalTo: hint.topAnchor, constant: -10),
+
+            hint.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            hint.trailingAnchor.constraint(equalTo: title.trailingAnchor),
+            hint.bottomAnchor.constraint(equalTo: buttons.topAnchor, constant: -18),
 
             buttons.trailingAnchor.constraint(equalTo: title.trailingAnchor),
             buttons.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -28)
